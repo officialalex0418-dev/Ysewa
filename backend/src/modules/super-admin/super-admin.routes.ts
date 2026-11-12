@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { optionalAuth } from "../../middlewares/auth.middleware.ts";
-import { httpError } from "../../middlewares/error-handler.ts";
-import { MongoOperator, connectMongoDB } from "../../config/mongodb.ts";
+import { optionalAuth } from "../../middlewares/auth.middleware.js";
+import { httpError } from "../../middlewares/error-handler.js";
+import { MongoOperator, connectMongoDB } from "../../config/mongodb.js";
 
 const router = Router();
 

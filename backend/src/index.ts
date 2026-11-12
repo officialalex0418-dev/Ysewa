@@ -10,14 +10,23 @@ import superAdminRoutes from "./modules/super-admin/super-admin.routes.js";
 import telemetryRoutes from "./modules/telemetry/telemetry.routes.js";
 import tripRoutes from "./modules/trips/trips.routes.js";
 import { errorHandler } from "./middlewares/error-handler.js";
-import { authRequired } from "./middlewares/auth.middleware.ts";
+import { authRequired } from "./middlewares/auth.middleware.js";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { connectMongoDB } from "./config/mongodb.js";
 
+// Prevent server process crash on unhandled promise rejections
+process.on("unhandledRejection", (reason) => {
+  console.error("[Node.js Process Warning] Unhandled Promise Rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[Node.js Process Warning] Uncaught Exception:", err);
+});
+
 const app = express();
 const server = createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: "*" } });
+const io = new SocketIOServer(server, { cors: { origin: "*" } } as any);
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -25,7 +34,15 @@ app.use(express.json());
 // Connect MongoDB Database
 connectMongoDB();
 
-app.get("/health", (_req, res) => res.json({ ok: true, service: "yatrasewa-api" }));
+// Health Check Endpoint (Used by Docker, Coolify, Load Balancers)
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "healthy",
+    ok: true,
+    service: "yatrasewa-backend-api",
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/bookings", bookingRoutes);
@@ -55,7 +72,7 @@ app.get("/api/v1/me", authRequired, async (req, res, next) => {
 
 app.use(errorHandler);
 
-const PORT = process.env.API_PORT ?? 4000;
-server.listen(PORT, () => {
-  console.log(`[yatrasewa-api] running on port ${PORT}`);
+const PORT = Number(process.env.PORT || process.env.API_PORT || 4000);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[yatrasewa-backend] API server running on http://0.0.0.0:${PORT}`);
 });
