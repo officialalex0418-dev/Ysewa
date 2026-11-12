@@ -115,7 +115,7 @@ export default function AdminCommissionsPage() {
             Total Bookings
           </div>
           <div className="mt-1 text-2xl font-bold tabular-npr text-[var(--color-ys-deep-pine)]">
-            {totalBookings.toLocaleString()}
+            {(totalBookings || 0).toLocaleString()}
           </div>
           <div className="mt-1 text-xs text-[var(--color-ys-emerald)] font-semibold">Across 4 active operators</div>
         </Card>

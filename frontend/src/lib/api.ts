@@ -42,17 +42,22 @@ api.interceptors.response.use(
   },
 );
 
-export function formatNpr(n: number | string): string {
+export function formatNpr(n?: number | string | null): string {
+  if (n === undefined || n === null) return "Rs. 0";
   const num = typeof n === "string" ? parseFloat(n) : n;
+  if (isNaN(num)) return "Rs. 0";
   return `Rs. ${num.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
-export function formatTime(d: string | Date): string {
+export function formatTime(d?: string | Date | null): string {
+  if (!d) return "--:--";
   const date = typeof d === "string" ? new Date(d) : d;
+  if (!date || isNaN(date.getTime())) return "--:--";
   return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 export function formatDuration(minutes: number): string {
+  if (!minutes || isNaN(minutes)) return "0m";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
