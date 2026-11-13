@@ -40,7 +40,7 @@ export default function SearchResultsPage() {
     initialData: FALLBACK_TRIPS,
   });
 
-  const trips = (query.data ?? [])
+  const trips = (Array.isArray(query.data) ? query.data : FALLBACK_TRIPS)
     .filter((t) => filterType === "all" || (filterType === "ac" && t.bus.amenities.ac) || (filterType === "wifi" && t.bus.amenities.wifi))
     .sort((a, b) => sortBy === "price" ? a.fare - b.fare : sortBy === "departure" ? new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime() : 0);
 
