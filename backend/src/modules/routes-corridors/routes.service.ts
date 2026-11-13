@@ -1,4 +1,5 @@
-import { prisma } from "@yatrasewa/database";
+// import { prisma } from "@yatrasewa/database";
+const prisma: any = {}; // TODO: Migrate to MongoDB
 
 export interface SearchParams {
   from: string; // city name

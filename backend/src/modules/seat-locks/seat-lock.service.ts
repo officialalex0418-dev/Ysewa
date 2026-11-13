@@ -1,4 +1,5 @@
-import { prisma } from "@yatrasewa/database";
+// import { prisma } from "@yatrasewa/database";
+const prisma: any = {}; // TODO: Migrate to MongoDB
 import { redis, loadSeatLockScripts } from "../../config/redis.js";
 import { env } from "../../config/env.js";
 import { httpError } from "../../middlewares/error-handler.js";

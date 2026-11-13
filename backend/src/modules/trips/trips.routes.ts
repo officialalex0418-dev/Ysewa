@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "@yatrasewa/database";
+// import { prisma } from "@yatrasewa/database";
+const prisma: any = {}; // TODO: Migrate to MongoDB
 import { validate } from "../../middlewares/validate.js";
 import { authRequired, optionalAuth } from "../../middlewares/auth.middleware.js";
 import { httpError } from "../../middlewares/error-handler.js";
