@@ -182,3 +182,9 @@ export default function SearchResultsPage() {
 }
 
 function Amenity({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-[6px] bg-[var(--color-ys-canvas)] px-2 py-1 text-[11px] text-[var(--color-ys-ink-muted)]">
+      {icon}{label}
+    </span>
+  );
+}
