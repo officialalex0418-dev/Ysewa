@@ -1,8 +1,11 @@
-// import { prisma } from "@yatrasewa/database";
-const prisma: any = {}; // TODO: Migrate to MongoDB
 import { redis, loadSeatLockScripts } from "../../config/redis.js";
 import { env } from "../../config/env.js";
 import { httpError } from "../../middlewares/error-handler.js";
+import mongoose from "mongoose";
+import { Trip } from "../../models/Trip.js";
+import { TripSeat } from "../../models/TripSeat.js";
+import { Booking } from "../../models/Booking.js";
+import { User } from "../../models/User.js";
 
 const LOADED = { acquireSha: "", releaseSha: "" };
 
@@ -22,17 +25,13 @@ export interface LockSeatsInput {
   channel: "online" | "bookie" | "conductor";
 }
 
-/**
- * Atomically lock seats via Redis Lua script and create a PENDING_PAYMENT booking row in PG.
- * Socket.IO broadcast is done by caller (controller) after tx commit.
- */
 export async function acquireSeats(input: LockSeatsInput) {
   const { tripId, seatLabels, actorId, channel } = input;
   const ttl = channel === "online" ? env.seatLockTtlOnline : channel === "bookie" ? env.seatLockTtlBookie : 30;
   const keys = seatLabels.map((l) => `seat_lock:${tripId}:${l}`);
 
   // Check trip exists
-  const trip = await prisma.trip.findUnique({ where: { id: tripId }, include: { bus: { include: { cabinLayout: true } } } });
+  const trip = await Trip.findById(tripId).populate("busId").lean();
   if (!trip) throw httpError(404, "Trip not found");
 
   // Run Lua acquire
@@ -44,52 +43,57 @@ export async function acquireSeats(input: LockSeatsInput) {
   }
 
   // Open PG transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const now = new Date();
     const lockExpiry = new Date(now.getTime() + ttl * 1000);
 
-    // Check and lock all seats (optimistic concurrency via version)
-    const updated = await prisma.$transaction(async (tx) => {
-      const found = await tx.tripSeat.findMany({
-        where: { tripId, seatLabel: { in: seatLabels }, status: "available" },
-      });
-      if (found.length !== seatLabels.length) {
-        // release Redis locks
-        throw httpError(409, "One or more seats were booked just now. Please re-select.", { code: "SEAT_TAKEN_RACE" });
-      }
+    const found = await TripSeat.find({
+        tripId, seatLabel: { $in: seatLabels }, status: "available"
+    }).session(session);
 
-      await tx.tripSeat.updateMany({
-        where: { tripId, seatLabel: { in: seatLabels }, status: "available" },
-        data: { status: "locked", lockedBy: actorId, lockedUntil: lockExpiry, version: { increment: 1 } },
-      });
+    if (found.length !== seatLabels.length) {
+      // release Redis locks
+      throw httpError(409, "One or more seats were booked just now. Please re-select.", { code: "SEAT_TAKEN_RACE" });
+    }
 
-      const counterUser = channel === "bookie" ? await tx.user.findUnique({ where: { id: actorId } }) : null;
+    await TripSeat.updateMany({
+        tripId, seatLabel: { $in: seatLabels }, status: "available"
+    }, {
+        $set: { status: "locked", lockedBy: actorId, lockedUntil: lockExpiry },
+        $inc: { version: 1 }
+    }, { session });
 
-      // Create PENDING_PAYMENT booking (if customer is logged in)
-      const booking = await tx.booking.create({
-        data: {
-          pnr: generatePnr(),
-          userId: channel === "online" ? actorId : null,
-          tripId,
-          counterId: counterUser?.counterId ?? null,
-          channel: channel as any,
-          status: "PENDING_PAYMENT",
-          totalFare: trip.fare.mul(seatLabels.length),
-          netPayable: trip.fare.mul(seatLabels.length),
-          passengerCount: seatLabels.length,
-          seatLabels,
-          contactPhone: "",
-        },
-      });
-      return { bookingId: booking.id, pnr: booking.pnr, expiresAt: lockExpiry };
-    });
+    const counterUser = channel === "bookie" ? await User.findById(actorId).session(session) : null;
 
-    return { success: true, ...updated, failedSeats: [] as string[] };
+    // Create PENDING_PAYMENT booking
+    const booking = await Booking.create([{
+        pnr: generatePnr(),
+        userId: channel === "online" ? actorId : undefined,
+        tripId,
+        operatorId: trip.operatorId,
+        counterId: counterUser?.counterId,
+        channel,
+        status: "PENDING_PAYMENT",
+        totalFare: trip.fare * seatLabels.length,
+        netPayable: trip.fare * seatLabels.length,
+        passengerCount: seatLabels.length,
+        seatLabels,
+        contactPhone: "", // Requires filling during checkout
+    }], { session });
+
+    await session.commitTransaction();
+
+    return { success: true, bookingId: booking[0]._id, pnr: booking[0].pnr, expiresAt: lockExpiry, failedSeats: [] as string[] };
   } catch (e) {
-    // Rollback Redis locks
+    await session.abortTransaction();
     const { releaseSha } = await getShas();
     await redis.evalsha(releaseSha, keys.length, ...keys, actorId).catch(() => {});
     throw e;
+  } finally {
+      session.endSession();
   }
 }
 
@@ -97,18 +101,14 @@ export async function releaseSeats(tripId: string, seatLabels: string[], actorId
   const { releaseSha } = await getShas();
   const keys = seatLabels.map((l) => `seat_lock:${tripId}:${l}`);
   await redis.evalsha(releaseSha, keys.length, ...keys, actorId);
-  await prisma.tripSeat.updateMany({
-    where: { tripId, seatLabel: { in: seatLabels }, lockedBy: actorId, status: "locked" },
-    data: { status: "available", lockedBy: null, lockedUntil: null },
-  });
+  await TripSeat.updateMany(
+    { tripId, seatLabel: { $in: seatLabels }, lockedBy: actorId, status: "locked" },
+    { $set: { status: "available", lockedBy: null, lockedUntil: null } }
+  );
 }
 
-/**
- * Get current states of seats for a trip, merging Redis lock state with PG state.
- * Returns Record<seatLabel, 0|1|2|3> where 0=available, 1=locked-by-you, 2=locked-by-other, 3=booked.
- */
 export async function getSeatStates(tripId: string, actorId?: string): Promise<Record<string, number>> {
-  const pg = await prisma.tripSeat.findMany({ where: { tripId } });
+  const pg = await TripSeat.find({ tripId }).lean();
   const states: Record<string, number> = {};
   for (const s of pg) {
     if (s.status === "booked") states[s.seatLabel] = 3;
