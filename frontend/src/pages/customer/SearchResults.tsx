@@ -32,15 +32,16 @@ export default function SearchResultsPage() {
     queryFn: async () => {
       try {
         const r = await api.get("/trips/search", { params: { from, to, date } });
-        return r.data as TripResult[];
-      } catch {
-        return FALLBACK_TRIPS;
+        return Array.isArray(r.data) ? r.data : [];
+      } catch (err) {
+        console.error("Failed to fetch trips", err);
+        return [];
       }
     },
-    initialData: FALLBACK_TRIPS,
+    initialData: [],
   });
 
-  const trips = (Array.isArray(query.data) ? query.data : FALLBACK_TRIPS)
+  const trips = (query.data ?? [])
     .filter((t) => filterType === "all" || (filterType === "ac" && t.bus.amenities.ac) || (filterType === "wifi" && t.bus.amenities.wifi))
     .sort((a, b) => sortBy === "price" ? a.fare - b.fare : sortBy === "departure" ? new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime() : 0);
 
@@ -181,37 +182,3 @@ export default function SearchResultsPage() {
 }
 
 function Amenity({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-[6px] bg-[var(--color-ys-canvas)] px-2 py-1 text-[11px] text-[var(--color-ys-ink-muted)]">
-      {icon}{label}
-    </span>
-  );
-}
-
-// Fallback in case API isn't running
-const FALLBACK_TRIPS: TripResult[] = [
-  {
-    id: "demo-trip-greenline", operator: { brandName: "Greenline Travels", status: "approved" },
-    bus: { plate: "BA 2 KHA 4512", nickname: "Greenline Deluxe", type: "ac_deluxe", amenities: { wifi: true, chargingPort: true, waterBottle: true, cctv: true, ac: true, lunchIncluded: true } },
-    route: { from: "Kathmandu", to: "Pokhara", distance: 200 },
-    departureTime: new Date(new Date().setHours(7, 0, 0, 0)).toISOString(),
-    arrivalTime: new Date(new Date().setHours(13, 30, 0, 0)).toISOString(),
-    fare: 2900, availableSeats: 18,
-  },
-  {
-    id: "demo-trip-sajha", operator: { brandName: "Sajha Yatayat", status: "approved" },
-    bus: { plate: "NA 2 KHA 1105", nickname: "Sajha AC Sleeper", type: "sleeper", amenities: { wifi: false, chargingPort: true, waterBottle: true, blanket: true, readingLight: true, cctv: true, ac: true } },
-    route: { from: "Kathmandu", to: "Pokhara", distance: 200 },
-    departureTime: new Date(new Date().setHours(8, 30, 0, 0)).toISOString(),
-    arrivalTime: new Date(new Date().setHours(15, 0, 0, 0)).toISOString(),
-    fare: 950, availableSeats: 22,
-  },
-  {
-    id: "demo-trip-mountain", operator: { brandName: "Mountain Deluxe Express", status: "approved" },
-    bus: { plate: "GA 2 KHA 4390", nickname: "Mountain VIP Sofa", type: "vip_sofa_2x1", amenities: { wifi: false, chargingPort: true, waterBottle: false, blanket: false, usbCharging: true, gpsTelematics: true } as any },
-    route: { from: "Kathmandu", to: "Pokhara", distance: 200 },
-    departureTime: new Date(new Date().setHours(9, 0, 0, 0)).toISOString(),
-    arrivalTime: new Date(new Date().setHours(15, 30, 0, 0)).toISOString(),
-    fare: 2200, availableSeats: 3,
-  },
-];
